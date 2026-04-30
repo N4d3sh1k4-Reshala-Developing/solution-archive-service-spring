@@ -1,0 +1,75 @@
+name: Build and Deploy Solution Archive Service
+
+on:
+  push:
+    branches: [ master ]
+
+env:
+  REGISTRY: ghcr.io
+  PROJECT_ROOT: "/home/${{ secrets.SERVER_USER }}/reshala-project"
+  SERVICE_NAME: "solution-archive-service-reshala"
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set lower case image name
+        run: echo "IMAGE_NAME=${GITHUB_REPOSITORY,,}" >> ${GITHUB_ENV}
+
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ${{ env.REGISTRY }} -u ${{ github.actor }} --password-stdin
+
+      - name: Build and Push
+        run: |
+          docker build \
+            --build-arg GHP_USER=n4d3sh1k4-reshala-developing \
+            --build-arg GHP_TOKEN=${{ secrets.GITHUB_TOKEN }} \
+            -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest .
+          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set lower case image name
+        run: echo "IMAGE_NAME=${GITHUB_REPOSITORY,,}" >> ${GITHUB_ENV}
+
+      - name: Tailscale
+        uses: tailscale/github-action@v2
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+
+      - name: Deploy via SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SERVER_SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_TAILSCALE_IP }} "mkdir -p ${{ env.PROJECT_ROOT }}/${{ env.SERVICE_NAME }}"
+          
+          scp -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa docker-compose.yml ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_TAILSCALE_IP }}:${{ env.PROJECT_ROOT }}/${{ env.SERVICE_NAME }}/docker-compose.yml
+
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_TAILSCALE_IP }} << 'EOF'
+            cd ${{ env.PROJECT_ROOT }}/${{ env.SERVICE_NAME }}
+            
+            echo "IMAGE_NAME=${{ env.IMAGE_NAME }}" > .env
+            echo "DB_USER=${{ secrets.POSTGRES_USER }}" >> .env
+            echo "DB_PASS=${{ secrets.POSTGRES_PASSWORD }}" >> .env
+            echo "RMQ_USER=${{ secrets.RMQ_USER }}" >> .env
+            echo "RMQ_PASS=${{ secrets.RMQ_PASS }}" >> .env
+            echo "MINIO_USER=${{ secrets.MINIO_USER }}" >> .env
+            echo "MINIO_PASS=${{ secrets.MINIO_PASS }}" >> .env
+            
+            echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+            docker compose pull
+            docker compose up -d
+          EOF
