@@ -1,6 +1,7 @@
 package com.n4d3sh1k4.solution_archive_service.service;
 
 import com.n4d3sh1k4.solution_archive_service.config.RabbitMQConfig;
+import com.n4d3sh1k4.solution_archive_service.dto.FeedbackRequestDto;
 import com.n4d3sh1k4.solution_archive_service.dto.OcrResultDto;
 import com.n4d3sh1k4.solution_archive_service.model.DatasetEntry;
 import com.n4d3sh1k4.solution_archive_service.model.RecognitionStatus;
@@ -119,7 +120,7 @@ public class RecognitionService {
     }
 
     @Transactional
-    public RecognitionTask handleUserFeedback(String taskId, String editedResult) {
+    public RecognitionTask handleUserFeedback(String taskId, FeedbackRequestDto feedbackRequestDto) {
         RecognitionTask task = taskRepository.findById(taskId)
                 .orElseThrow(() -> new RuntimeException("Task not found"));
 
@@ -128,20 +129,8 @@ public class RecognitionService {
         }
 
         task.setStatus(RecognitionStatus.COMPLETED_EDITED);
-        task.setEditedResult(editedResult);
+        task.setEditedResult(feedbackRequestDto.getEditStatus() ? feedbackRequestDto.getEditedResult() : null);
         task = taskRepository.save(task);
-
-        if (task.getImagePath() != null && editedResult != null) {
-            minioService.moveToDatasetBucket(task.getImagePath());
-            log.info("User edited result for {}, image moved to dataset", taskId);
-            DatasetEntry data = DatasetEntry.builder()
-                    .originalTaskId(task.getId())
-                    .latexContent(editedResult)
-                    .imagePath(task.getImagePath())
-                    .createdAt(LocalDateTime.now())
-                    .build();
-            datasetEntryRepository.save(data);
-        }
         sendToCasEngine(task);
 
         return task;
@@ -217,6 +206,17 @@ public class RecognitionService {
                             task.setSolutionResult(new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(dto.getResult()));
                             task.setStatus(RecognitionStatus.SOLUTION_READY);
                             taskRepository.save(task);
+                            if(task.getImagePath() != null && task.getEditedResult() != null) {
+                                minioService.moveToDatasetBucket(task.getImagePath());
+                                log.info("User edited result for {}, image moved to dataset", task.getId());
+                                DatasetEntry data = DatasetEntry.builder()
+                                        .originalTaskId(task.getId())
+                                        .latexContent(task.getEditedResult())
+                                        .imagePath(task.getImagePath())
+                                        .createdAt(LocalDateTime.now())
+                                        .build();
+                                datasetEntryRepository.save(data);
+                            }
                             log.info("Solution received for task {}", task.getId());
                         } catch (Exception e) {
                             markTaskAsFailed(task, "Failed to serialize solution");

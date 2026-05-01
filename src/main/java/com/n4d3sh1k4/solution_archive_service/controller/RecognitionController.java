@@ -51,7 +51,7 @@ public class RecognitionController {
             @Parameter(description = "ID задачи распознавания") @PathVariable String id, 
             @Parameter(description = "Объект с исправленным LaTeX") @RequestBody FeedbackRequestDto dto) {
         try {
-            RecognitionTask task = recognitionService.handleUserFeedback(id, dto.getEditedResult());
+            RecognitionTask task = recognitionService.handleUserFeedback(id, dto);
             return RecognitionResponse.fromEntity(task);
         } catch (RuntimeException e) {
             throw new UniversalExeption(e.getMessage(), "BAD_REQUEST", HttpStatus.BAD_REQUEST);

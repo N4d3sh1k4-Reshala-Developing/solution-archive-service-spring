@@ -6,6 +6,9 @@ import lombok.Data;
 @Data
 @Schema(description = "Запрос на отправку откорректированного результата (фидбека)")
 public class FeedbackRequestDto {
+    @Schema(description = "Статус редактирования пользователем ответа", example = "true")
+    private Boolean editStatus;
+
     @Schema(description = "Откорректированный пользователем LaTeX код", example = "\\frac{1}{2}")
-    private String editedResult;
+    private String editedResult = null;
 }
