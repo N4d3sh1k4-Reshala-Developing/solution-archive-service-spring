@@ -8,9 +8,9 @@ spring:
   application:
     name: solution-archive-service
   datasource:
-    url: jdbc:postgresql://localhost:5430/suluton_archive_db
-    username: postgres
-    password: password
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
     driver-class-name: org.postgresql.Driver
   jpa:
     hibernate:
@@ -21,19 +21,18 @@ spring:
         dialect: org.hibernate.dialect.PostgreSQLDialect
         format_sql: true
   rabbitmq:
-    host: localhost
-    port: 5672
-    username: solution-user
-    password: solutionpass
-    virtual-host: solution-service
+    host: ${RABBIT_HOST}
+    port: ${RABBIT_PORT}
+    username: ${RABBIT_USERNAME}
+    password: ${RABBIT_PASSWORD}
+    virtual-host: ${RABBIT_VHOST}
 
 eureka:
   client:
     register-with-eureka: true
     fetch-registry: true
     service-url:
-      defaultZone: http://eureka-user:zvBGTYdMUJV7mpRs35YA@localhost:8761/eureka/
-
+      defaultZone: http://${EUREKA_USER}:${EUREKA_PASSWORD}@${EUREKA_HOST:localhost}:8761/eureka/
   instance:
     prefer-ip-address: true
     ip-address: 127.0.0.1
@@ -41,14 +40,14 @@ eureka:
     instance-id: ${spring.application.name}:${server.port}
 
 minio:
-  url: http://localhost:9000
-  access-key: admin
-  secret-key: password123
-  temp-bucket: temp-images
-  dataset-bucket: dataset-images
+  url: ${MINIO_URL}
+  access-key: ${MINIO_ACCESS_KEY}
+  secret-key: ${MINIO_SECRET_KEY}
+  temp-bucket: ${MINIO_TEMP_BUCKET}
+  dataset-bucket: ${MINIO_DATASET_BUCKET}
 
 latexocr:
-  url: http://localhost:8183
+  url: ${LATEXOCR_URL}
 
 casengine:
-  url: http://localhost:8184
+  url: ${CASENGINE_URL}
