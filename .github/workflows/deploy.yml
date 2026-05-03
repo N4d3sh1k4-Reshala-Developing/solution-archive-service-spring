@@ -68,6 +68,8 @@ jobs:
             echo "RMQ_PASS=${{ secrets.RMQ_PASS }}" >> .env
             echo "MINIO_USER=${{ secrets.MINIO_USER }}" >> .env
             echo "MINIO_PASS=${{ secrets.MINIO_PASS }}" >> .env
+            echo "MINIO_TEMP_BUCKET=${{ secrets.MINIO_TEMP_BUCKET }}" >> .env
+            echo "MINIO_DATASET_BUCKET=${{ secrets.MINIO_DATASET_BUCKET }}" >> .env
             
             echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
             docker compose pull

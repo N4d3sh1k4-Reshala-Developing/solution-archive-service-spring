@@ -26,6 +26,8 @@ services:
       - MINIO_URL=http://minio-reshala:9000
       - MINIO_ACCESS-KEY=${MINIO_USER}
       - MINIO_SECRET-KEY=${MINIO_PASS}
+      - MINIO_TEMP_BUCKET=${MINIO_TEMP_BUCKET}
+      - MINIO_DATASET_BUCKET=${MINIO_DATASET_BUCKET}
 
       # Внешние сервисы (имена контейнеров в reshala-net)
       - LATEXOCR_URL=http://ocr-web-reshala:8183
