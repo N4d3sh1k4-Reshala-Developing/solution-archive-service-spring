@@ -10,7 +10,7 @@ services:
       - EUREKA_CLIENT_ENABLED=false
 
       # Database
-      - DB_URL=${POSTGRES_URL}
+      - DB_URL=${DB_URL}
       - DB_USERNAME=${DB_USER}
       - DB_PASSWORD=${DB_PASS}
       - SPRING_DATASOURCE_DRIVER-CLASS-NAME=org.postgresql.Driver
