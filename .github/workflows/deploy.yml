@@ -62,6 +62,7 @@ jobs:
             cd ${{ env.PROJECT_ROOT }}/${{ env.SERVICE_NAME }}
             
             echo "IMAGE_NAME=${{ env.IMAGE_NAME }}" > .env
+            echo "DB_URL=${{ secrets.POSTGRES_URL }}" >> .env
             echo "DB_USER=${{ secrets.POSTGRES_USER }}" >> .env
             echo "DB_PASS=${{ secrets.POSTGRES_PASSWORD }}" >> .env
             echo "RMQ_USER=${{ secrets.RMQ_USER }}" >> .env

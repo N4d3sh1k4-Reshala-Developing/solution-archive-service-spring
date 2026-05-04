@@ -10,7 +10,7 @@ services:
       - EUREKA_CLIENT_ENABLED=false
 
       # Database
-      - DB_URL=jdbc:postgresql://postgres-reshala:5432/suluton_archive_db
+      - DB_URL=${POSTGRES_URL}
       - DB_USERNAME=${DB_USER}
       - DB_PASSWORD=${DB_PASS}
       - SPRING_DATASOURCE_DRIVER-CLASS-NAME=org.postgresql.Driver
