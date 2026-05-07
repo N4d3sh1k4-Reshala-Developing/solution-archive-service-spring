@@ -3,6 +3,7 @@ package com.n4d3sh1k4.solution_archive_service.service;
 import com.n4d3sh1k4.solution_archive_service.config.RabbitMQConfig;
 import com.n4d3sh1k4.solution_archive_service.dto.FeedbackRequestDto;
 import com.n4d3sh1k4.solution_archive_service.dto.OcrResultDto;
+import com.n4d3sh1k4.solution_archive_service.dto.SolveRequestDto;
 import com.n4d3sh1k4.solution_archive_service.model.DatasetEntry;
 import com.n4d3sh1k4.solution_archive_service.model.RecognitionStatus;
 import com.n4d3sh1k4.solution_archive_service.model.RecognitionTask;
@@ -83,6 +84,20 @@ public class RecognitionService {
             log.error("Failed to send image to LatexOCR", e);
             markTaskAsFailed(task, e.getMessage());
         }
+        return task;
+    }
+
+    @Transactional
+    public RecognitionTask initiateIndependentSolve(java.util.UUID userId, SolveRequestDto dto) {
+        RecognitionTask task = RecognitionTask.builder()
+                .userId(userId)
+                .status(RecognitionStatus.SOLVING_EQUATION)
+                .originalResult(dto.getEquation())
+                .imagePath(null)
+                .build();
+        task = taskRepository.save(task);
+
+        sendToCasEngine(task);
 
         return task;
     }

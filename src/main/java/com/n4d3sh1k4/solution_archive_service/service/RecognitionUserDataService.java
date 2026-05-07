@@ -1,5 +1,6 @@
 package com.n4d3sh1k4.solution_archive_service.service;
 
+import com.n4d3sh1k4.common.exception.ContentNotFoundException;
 import com.n4d3sh1k4.solution_archive_service.dto.RecognitionHistoryResponse;
 import com.n4d3sh1k4.solution_archive_service.model.RecognitionTask;
 import com.n4d3sh1k4.solution_archive_service.repository.RecognitionTaskRepository;
@@ -7,6 +8,7 @@ import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 import java.util.UUID;
@@ -25,5 +27,12 @@ public class RecognitionUserDataService {
                 .stream()
                 .map(RecognitionHistoryResponse::fromEntity)
                 .collect(Collectors.toList());
+    }
+
+    @Transactional
+    public void deleteTask(String taskId, java.util.UUID userId) {
+        RecognitionTask task = recognitionRepository.findByIdAndUserId(taskId, userId)
+                .orElseThrow(() -> new ContentNotFoundException("Task not found or access denied"));
+        recognitionRepository.delete(task);
     }
 }

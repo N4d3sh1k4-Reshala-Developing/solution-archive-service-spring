@@ -10,4 +10,6 @@ import java.util.UUID;
 public interface RecognitionTaskRepository extends JpaRepository<RecognitionTask, String> {
     Optional<RecognitionTask> findByLatexOcrTaskId(String latexOcrTaskId);
     List<RecognitionTask> findAllByUserIdOrderByCreatedAtDesc(UUID userId);
+    Optional<RecognitionTask> findByIdAndUserId(String id, java.util.UUID userId);
+    void deleteByIdAndUserId(String id, java.util.UUID userId);
 }

@@ -33,4 +33,12 @@ public class RecognitionUserDataController {
         log.info("History: {}", history);
         return ResponseEntity.ok(history);
     }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> delete(
+            @PathVariable String id,
+            @RequestHeader("X-User-Id") UUID userId) {
+        recognitionService.deleteTask(id, userId);
+        return ResponseEntity.noContent().build();
+    }
 }

@@ -31,7 +31,7 @@ public class RecognitionTask {
     private String editedResult;
 
     @Column(name = "image_path")
-    private String imagePath; // path in MinIO
+    private String imagePath;
 
     @Column(name = "feedback_deadline")
     private LocalDateTime feedbackDeadline;

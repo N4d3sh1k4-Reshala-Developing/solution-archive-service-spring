@@ -4,6 +4,7 @@ import com.n4d3sh1k4.common.exception.ContentNotFoundException;
 import com.n4d3sh1k4.common.exception.UniversalExeption;
 import com.n4d3sh1k4.solution_archive_service.dto.FeedbackRequestDto;
 import com.n4d3sh1k4.solution_archive_service.dto.RecognitionResponse;
+import com.n4d3sh1k4.solution_archive_service.dto.SolveRequestDto;
 import com.n4d3sh1k4.solution_archive_service.model.RecognitionTask;
 import com.n4d3sh1k4.solution_archive_service.service.RecognitionService;
 import lombok.RequiredArgsConstructor;
@@ -33,6 +34,18 @@ public class RecognitionController {
         }
         RecognitionTask task = recognitionService.initiateRecognition(file, userId);
         return ResponseEntity.accepted().body(RecognitionResponse.fromEntity(task));
+    }
+
+    @PostMapping("/process/solve")
+    public RecognitionResponse processSolve(
+            @Parameter(description = "ID пользователя (передается через Gateway)") @RequestHeader(value = "X-User-Id", required = false) java.util.UUID userId,
+            @Parameter(description = "Объект с LaTeX-уравнением") @RequestBody SolveRequestDto solveRequestDto){
+        try {
+            RecognitionTask task = recognitionService.initiateIndependentSolve(userId, solveRequestDto);
+            return RecognitionResponse.fromEntity(task);
+        } catch (RuntimeException e) {
+            throw new UniversalExeption(e.getMessage(), "BAD_REQUEST", HttpStatus.BAD_REQUEST);
+        }
     }
 
     @Operation(summary = "Получить статус и результат задачи", description = "Возвращает текущее состояние задачи распознавания по её ID.")
