@@ -12,4 +12,5 @@ public interface RecognitionTaskRepository extends JpaRepository<RecognitionTask
     List<RecognitionTask> findAllByUserIdOrderByCreatedAtDesc(UUID userId);
     Optional<RecognitionTask> findByIdAndUserId(String id, java.util.UUID userId);
     void deleteByIdAndUserId(String id, java.util.UUID userId);
+    Optional<RecognitionTask> findByCasEngineTaskId(String casEngineTaskId);
 }

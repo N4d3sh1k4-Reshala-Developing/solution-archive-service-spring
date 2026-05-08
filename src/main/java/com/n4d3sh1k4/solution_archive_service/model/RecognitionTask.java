@@ -45,13 +45,8 @@ public class RecognitionTask {
     @Column(name = "solution_result", columnDefinition = "TEXT")
     private String solutionResult;
 
+
     @Column(name = "created_at")
-    private LocalDateTime createdAt;
-    
-    @PrePersist
-    public void prePersist() {
-        if (createdAt == null) {
-            createdAt = LocalDateTime.now();
-        }
-    }
+    @Builder.Default
+    private LocalDateTime createdAt = LocalDateTime.now();
 }

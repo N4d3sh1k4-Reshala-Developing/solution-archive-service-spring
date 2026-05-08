@@ -19,7 +19,7 @@ import java.util.zip.ZipOutputStream;
 
 @Slf4j
 @RestController
-@RequestMapping("/dataset")
+@RequestMapping("/equation/dataset")
 @RequiredArgsConstructor
 public class DatasetController {
     private final DatasetEntryRepository datasetRepository;

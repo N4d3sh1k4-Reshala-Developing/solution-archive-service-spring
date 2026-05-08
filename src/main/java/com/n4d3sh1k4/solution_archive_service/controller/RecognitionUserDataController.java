@@ -1,6 +1,7 @@
 package com.n4d3sh1k4.solution_archive_service.controller;
 
 import com.n4d3sh1k4.solution_archive_service.dto.RecognitionHistoryResponse;
+import com.n4d3sh1k4.solution_archive_service.model.UserStatistics;
 import com.n4d3sh1k4.solution_archive_service.service.RecognitionUserDataService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -15,7 +16,7 @@ import java.util.UUID;
 
 @Tag(name = "RD Recognition/Solve user results", description = "API для получения результатов распознавания и вычислений пользователя")
 @RestController
-@RequestMapping("/recognition/data")
+@RequestMapping("/equation/user")
 @RequiredArgsConstructor
 @Slf4j
 public class RecognitionUserDataController {
@@ -32,6 +33,14 @@ public class RecognitionUserDataController {
         List<RecognitionHistoryResponse> history = recognitionService.getUserHistory(userId);
         log.info("History: {}", history);
         return ResponseEntity.ok(history);
+    }
+
+    @GetMapping("/statistic")
+    public ResponseEntity<UserStatistics> getUserStatistics(
+            @Parameter(description = "ID пользователя (из Gateway)")
+            @RequestHeader(value = "X-User-Id") UUID userId
+    ) {
+        return ResponseEntity.ok(recognitionService.getUserStatistic(userId));
     }
 
     @DeleteMapping("/{id}")

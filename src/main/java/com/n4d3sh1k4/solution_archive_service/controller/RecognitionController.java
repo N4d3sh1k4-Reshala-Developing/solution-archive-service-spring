@@ -18,7 +18,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 
 @Tag(name = "Распознавание", description = "API для загрузки изображений и получения результатов распознавания и вычислений")
 @RestController
-@RequestMapping("/recognition")
+@RequestMapping("/equation/recognition")
 @RequiredArgsConstructor
 public class RecognitionController {
 
