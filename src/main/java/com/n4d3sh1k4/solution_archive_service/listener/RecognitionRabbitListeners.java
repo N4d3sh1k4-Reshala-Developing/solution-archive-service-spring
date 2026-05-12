@@ -18,30 +18,18 @@ public class RecognitionRabbitListeners {
     @RabbitListener(queues = RabbitMQConfig.OCR_RESULTS_QUEUE)
     public void handleOcrResult(OcrResultDto resultDto) {
         log.info("Received OCR Result from RabbitMQ for Celery Task: {}", resultDto.getTaskId());
-        try {
-            recognitionService.processOcrResult(resultDto);
-        } catch (Exception e) {
-            log.error("Error processing OCR result", e);
-        }
+        recognitionService.processOcrResult(resultDto);
     }
 
     @RabbitListener(queues = RabbitMQConfig.FEEDBACK_PROCESS_QUEUE)
     public void handleFeedbackTimeout(String taskId) {
         log.info("Received feedback timeout message from DLQ for Task: {}", taskId);
-        try {
-            recognitionService.handleFeedbackTimeout(taskId);
-        } catch (Exception e) {
-            log.error("Error processing feedback timeout", e);
-        }
+        recognitionService.handleFeedbackTimeout(taskId);
     }
 
     @RabbitListener(queues = RabbitMQConfig.CAS_RESULTS_QUEUE)
     public void handleCasResult(com.n4d3sh1k4.solution_archive_service.dto.CasResultDto resultDto) {
         log.info("Received CAS Result from RabbitMQ for CAS Task: {}", resultDto.getTaskId());
-        try {
-            recognitionService.processCasResult(resultDto);
-        } catch (Exception e) {
-            log.error("Error processing CAS result", e);
-        }
+        recognitionService.processCasResult(resultDto);
     }
 }

@@ -11,9 +11,9 @@ import com.n4d3sh1k4.solution_archive_service.model.RecognitionTask;
 import com.n4d3sh1k4.solution_archive_service.repository.DatasetEntryRepository;
 import com.n4d3sh1k4.solution_archive_service.repository.RecognitionTaskRepository;
 import com.n4d3sh1k4.solution_archive_service.repository.UserStatisticsRepository;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.HttpEntity;
@@ -21,7 +21,9 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestTemplate;
@@ -34,14 +36,29 @@ import java.util.UUID;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class RecognitionService {
     private final RecognitionTaskRepository taskRepository;
     private final DatasetEntryRepository datasetEntryRepository;
     private final UserStatisticsRepository userStatisticsRepository;
     private final MinioService minioService;
     private final RabbitTemplate rabbitTemplate;
+    private final TransactionTemplate transactionTemplate;
     private final ObjectMapper objectMapper = new ObjectMapper();
+
+    @Autowired
+    public RecognitionService(RecognitionTaskRepository taskRepository,
+                              DatasetEntryRepository datasetEntryRepository,
+                              UserStatisticsRepository userStatisticsRepository,
+                              MinioService minioService,
+                              RabbitTemplate rabbitTemplate,
+                              PlatformTransactionManager transactionManager) {
+        this.taskRepository = taskRepository;
+        this.datasetEntryRepository = datasetEntryRepository;
+        this.userStatisticsRepository = userStatisticsRepository;
+        this.minioService = minioService;
+        this.rabbitTemplate = rabbitTemplate;
+        this.transactionTemplate = new TransactionTemplate(transactionManager);
+    }
 
     @Value("${casengine.url}")
     private String casEngineUrl;
@@ -50,15 +67,33 @@ public class RecognitionService {
     private String latexOcrUrl;
 
 
-    @Transactional
     public RecognitionTask initiateRecognition(MultipartFile file, java.util.UUID userId) {
-        String tempImagePath = minioService.saveToTempBucket(file);
-        RecognitionTask task = RecognitionTask.builder()
-                .userId(userId)
-                .status(RecognitionStatus.RECOGNIZING)
-                .imagePath(tempImagePath)
-                .build();
-        task = taskRepository.save(task);
+        log.info("Initiating recognition for user: {}", userId);
+        
+        String tempImagePath;
+        try {
+            tempImagePath = minioService.saveToTempBucket(file);
+        } catch (Exception e) {
+            log.error("Failed to save image to MinIO", e);
+            throw new RuntimeException("Storage error: " + e.getMessage());
+        }
+
+        RecognitionTask task;
+        try {
+            final String path = tempImagePath;
+            task = transactionTemplate.execute(status -> {
+                log.debug("Saving initial task in transaction");
+                return saveInitialTask(path, userId);
+            });
+        } catch (Exception e) {
+            log.error("Failed to save initial task", e);
+            throw new RuntimeException("Database error: " + e.getMessage());
+        }
+
+        if (task == null) {
+            log.error("Task creation returned null");
+            throw new RuntimeException("Failed to create recognition task");
+        }
 
         try {
             RestTemplate restTemplate = new RestTemplate();
@@ -77,57 +112,63 @@ public class RecognitionService {
             ResponseEntity<Map> response = restTemplate.postForEntity(latexOcrUrl + "/api/v1/ocr", requestEntity, Map.class);
             if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
                 String celeryTaskId = (String) response.getBody().get("task_id");
-                task.setLatexOcrTaskId(celeryTaskId);
-                taskRepository.save(task);
+                transactionTemplate.executeWithoutResult(s -> updateTaskOcrId(task.getId(), celeryTaskId));
                 log.info("Sent task to latexOCR, Celery task_id: {}, Local ID: {}", celeryTaskId, task.getId());
             } else {
-                markTaskAsFailed(task, "LatexOCR HTTP Response " + response.getStatusCode().value());
+                transactionTemplate.executeWithoutResult(s -> markTaskAsFailed(task.getId(), "LatexOCR HTTP Response " + response.getStatusCode().value()));
             }
         } catch (Exception e) {
             log.error("Failed to send image to LatexOCR", e);
-            markTaskAsFailed(task, e.getMessage());
+            transactionTemplate.executeWithoutResult(s -> markTaskAsFailed(task.getId(), e.getMessage()));
         }
         return task;
     }
 
 
-    @Transactional
     public RecognitionTask initiateIndependentSolve(java.util.UUID userId, SolveRequestDto dto) {
+        RecognitionTask task = transactionTemplate.execute(status -> createIndependentTask(userId, dto));
+        sendToCasEngine(task);
+        return task;
+    }
+
+    protected RecognitionTask saveInitialTask(String tempImagePath, java.util.UUID userId) {
+        RecognitionTask task = RecognitionTask.builder()
+                .userId(userId)
+                .status(RecognitionStatus.RECOGNIZING)
+                .imagePath(tempImagePath)
+                .build();
+        return taskRepository.save(task);
+    }
+
+    protected RecognitionTask createIndependentTask(java.util.UUID userId, SolveRequestDto dto) {
         RecognitionTask task = RecognitionTask.builder()
                 .userId(userId)
                 .status(RecognitionStatus.SOLVING_EQUATION)
                 .originalResult(dto.getEquation())
                 .imagePath(null)
                 .build();
-        task = taskRepository.save(task);
-        sendToCasEngine(task);
-        return task;
+        return taskRepository.save(task);
     }
 
 
-    private void markTaskAsFailed(RecognitionTask task, String error) {
-        task.setStatus(RecognitionStatus.FAILED);
-        task.setOriginalResult("Error: " + error);
-        if (task.getImagePath() != null) {
-            minioService.deleteFromTempBucket(task.getImagePath());
-            task.setImagePath(null);
-        }
-        taskRepository.save(task);
-        int directInc = (task.getLatexOcrTaskId() == null) ? 1 : 0;
-        userStatisticsRepository.upsertStats(task.getUserId(), 0, 1, directInc);
-        log.error("Task {} marked as failed. Reason: {}", task.getId(), error);
-    }
 
 
     @Transactional
     public void processOcrResult(OcrResultDto dto) {
         Optional<RecognitionTask> optionalTask = taskRepository.findByLatexOcrTaskId(dto.getTaskId());
         if (optionalTask.isEmpty()) {
-            log.warn("Received OCR result for unknown celery task_id: {}", dto.getTaskId());
-            return;
+            log.warn("Received OCR result for unknown celery task_id: {}. Requeuing...", dto.getTaskId());
+            throw new RuntimeException("Task not found for OCR ID: " + dto.getTaskId());
         }
 
         RecognitionTask task = optionalTask.get();
+
+        // Идемпотентность: обрабатываем только если задача еще в статусе распознавания
+        if (task.getStatus() != RecognitionStatus.RECOGNIZING) {
+            log.info("Received OCR result for task {} which is already in status {}", task.getId(), task.getStatus());
+            return;
+        }
+
         if ("SUCCESS".equals(dto.getStatus())) {
             task.setStatus(RecognitionStatus.READY_FOR_FEEDBACK);
             task.setOriginalResult(dto.getResult());
@@ -136,13 +177,18 @@ public class RecognitionService {
             rabbitTemplate.convertAndSend(RabbitMQConfig.FEEDBACK_DELAY_EXCHANGE, "", task.getId());
             log.info("Task {} is READY_FOR_FEEDBACK. Delayed 30 min check scheduled.", task.getId());
         } else {
-            markTaskAsFailed(task, dto.getError());
+            markTaskAsFailed(task.getId(), dto.getError());
         }
     }
 
 
-    @Transactional
     public RecognitionTask handleUserFeedback(String taskId, FeedbackRequestDto feedbackRequestDto) {
+        RecognitionTask task = transactionTemplate.execute(status -> updateTaskWithFeedback(taskId, feedbackRequestDto));
+        sendToCasEngine(task);
+        return task;
+    }
+
+    protected RecognitionTask updateTaskWithFeedback(String taskId, FeedbackRequestDto feedbackRequestDto) {
         RecognitionTask task = taskRepository.findById(taskId)
                 .orElseThrow(() -> new RuntimeException("Task not found"));
         if (task.getStatus() != RecognitionStatus.READY_FOR_FEEDBACK) {
@@ -152,20 +198,24 @@ public class RecognitionService {
         if (Boolean.TRUE.equals(feedbackRequestDto.getEditStatus())) {
             task.setStatus(RecognitionStatus.COMPLETED_EDITED);
             task.setEditedResult(feedbackRequestDto.getEditedResult());
-            userStatisticsRepository.incrementEditedStats(task.getUserId());
+            if (task.getUserId() != null) {
+                userStatisticsRepository.incrementEditedStats(task.getUserId());
+            }
         } else {
             task.setStatus(RecognitionStatus.COMPLETED_AUTO);
             task.setEditedResult(null);
         }
-        task = taskRepository.save(task);
-        sendToCasEngine(task);
-        return task;
+        return taskRepository.save(task);
     }
 
-    @Transactional
     public void handleFeedbackTimeout(String taskId) {
+        Optional<RecognitionTask> updatedTask = transactionTemplate.execute(status -> markTaskAsTimedOut(taskId));
+        updatedTask.ifPresent(this::sendToCasEngine);
+    }
+
+    protected Optional<RecognitionTask> markTaskAsTimedOut(String taskId) {
         Optional<RecognitionTask> optionalTask = taskRepository.findById(taskId);
-        if (optionalTask.isEmpty()) return;
+        if (optionalTask.isEmpty()) return Optional.empty();
         RecognitionTask task = optionalTask.get();
         if (task.getStatus() == RecognitionStatus.READY_FOR_FEEDBACK) {
             log.info("Feedback timeout reached for task {}. Auto-completing.", taskId);
@@ -174,9 +224,9 @@ public class RecognitionService {
                 minioService.deleteFromTempBucket(task.getImagePath());
                 task.setImagePath(null);
             }
-            task = taskRepository.save(task);
-            sendToCasEngine(task);
+            return Optional.of(taskRepository.save(task));
         }
+        return Optional.empty();
     }
 
     public RecognitionTask getTask(String taskId) {
@@ -200,29 +250,71 @@ public class RecognitionService {
                 String casTaskId = (String) response.getBody().get("task_id");
                 task.setCasEngineTaskId(casTaskId);
                 task.setStatus(RecognitionStatus.SOLVING_EQUATION);
-                taskRepository.save(task);
+                transactionTemplate.executeWithoutResult(s -> updateTaskCasInfo(task.getId(), casTaskId));
                 log.info("Sent equation to CAS Engine, CAS task_id: {}, Local ID: {}", casTaskId, task.getId());
             } else {
-                markTaskAsFailed(task, "CAS Engine HTTP Response " + response.getStatusCode().value());
+                transactionTemplate.executeWithoutResult(s -> markTaskAsFailed(task.getId(), "CAS Engine HTTP Response " + response.getStatusCode().value()));
             }
         } catch (Exception e) {
             log.error("Failed to send equation to CAS engine", e);
-            markTaskAsFailed(task, "CAS Engine failed: " + e.getMessage());
+            transactionTemplate.executeWithoutResult(s -> markTaskAsFailed(task.getId(), "CAS Engine failed: " + e.getMessage()));
         }
+    }
+
+    protected void updateTaskCasInfo(String id, String casTaskId) {
+        taskRepository.findById(id).ifPresent(task -> {
+            task.setCasEngineTaskId(casTaskId);
+            task.setStatus(RecognitionStatus.SOLVING_EQUATION);
+            taskRepository.save(task);
+        });
+    }
+
+    protected void markTaskAsFailed(String taskId, String error) {
+        taskRepository.findById(taskId).ifPresent(task -> {
+            if (task.getStatus() == RecognitionStatus.FAILED) return; // Уже помечена как ошибка
+            
+            task.setStatus(RecognitionStatus.FAILED);
+            task.setOriginalResult("Error: " + error);
+            if (task.getImagePath() != null) {
+                minioService.deleteFromTempBucket(task.getImagePath());
+                task.setImagePath(null);
+            }
+            taskRepository.save(task);
+            if (task.getUserId() != null) {
+                int directInc = (task.getLatexOcrTaskId() == null) ? 1 : 0;
+                userStatisticsRepository.upsertStats(task.getUserId(), 0, 1, directInc);
+            }
+            log.error("Task {} marked as failed. Reason: {}", task.getId(), error);
+        });
+    }
+
+    protected void updateTaskOcrId(String taskId, String celeryTaskId) {
+        taskRepository.findById(taskId).ifPresent(task -> {
+            task.setLatexOcrTaskId(celeryTaskId);
+            taskRepository.save(task);
+        });
     }
 
     @Transactional
     public void processCasResult(com.n4d3sh1k4.solution_archive_service.dto.CasResultDto dto) {
         taskRepository.findByCasEngineTaskId(dto.getTaskId())
                 .ifPresentOrElse(task -> {
-                    boolean isSuccess = "SUCCESS".equals(dto.getStatus());
+                    // Идемпотентность: обрабатываем результат только если задача еще в процессе
+                    if (task.getStatus() != RecognitionStatus.SOLVING_EQUATION) {
+                        log.info("Received result for task {} which is already in status {}", task.getId(), task.getStatus());
+                        return;
+                    }
 
+                    boolean isSuccess = "SUCCESS".equals(dto.getStatus());
                     if (isSuccess) {
                         handleSuccess(task, dto);
                     } else {
-                        markTaskAsFailed(task, dto.getError());
+                        markTaskAsFailed(task.getId(), dto.getError());
                     }
-                }, () -> log.warn("Received CAS result for unknown task_id: {}", dto.getTaskId()));
+                }, () -> {
+                    log.warn("Received CAS result for unknown task_id: {}. Requeuing...", dto.getTaskId());
+                    throw new RuntimeException("Task not found for CAS ID: " + dto.getTaskId());
+                });
     }
 
     private void handleSuccess(RecognitionTask task, com.n4d3sh1k4.solution_archive_service.dto.CasResultDto dto) {
@@ -242,11 +334,13 @@ public class RecognitionService {
                 datasetEntryRepository.save(data);
             }
             int directInc = (task.getLatexOcrTaskId() == null) ? 1 : 0;
-            userStatisticsRepository.upsertStats(task.getUserId(), 1, 0, directInc);
+            if (task.getUserId() != null) {
+                userStatisticsRepository.upsertStats(task.getUserId(), 1, 0, directInc);
+            }
 
             log.info("Solution received for task {}", task.getId());
         } catch (Exception e) {
-            markTaskAsFailed(task, "Failed to serialize solution");
+            markTaskAsFailed(task.getId(), "Failed to serialize solution");
         }
     }
 }
