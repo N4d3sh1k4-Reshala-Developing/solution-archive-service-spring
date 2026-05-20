@@ -18,7 +18,16 @@ public class RecognitionRabbitListeners {
     @RabbitListener(queues = RabbitMQConfig.OCR_RESULTS_QUEUE)
     public void handleOcrResult(OcrResultDto resultDto) {
         log.info("Received OCR Result from RabbitMQ for Celery Task: {}", resultDto.getTaskId());
-        recognitionService.processOcrResult(resultDto);
+        try {
+            recognitionService.processOcrResult(resultDto);
+        } catch (Exception e) {
+            // Если это не ошибка гонки (задача не найдена), то просто логируем и не переповторяем, 
+            // чтобы не забивать очередь бесконечными ретраями уже решенных задач
+            if (e.getMessage() != null && e.getMessage().contains("Task not found")) {
+                throw e; // Позволяем requeue только если задача еще не долетела до БД
+            }
+            log.error("Error processing OCR result (ignoring to prevent loop): {}", e.getMessage());
+        }
     }
 
     @RabbitListener(queues = RabbitMQConfig.FEEDBACK_PROCESS_QUEUE)
