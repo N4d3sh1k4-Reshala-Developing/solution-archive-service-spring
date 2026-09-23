@@ -51,3 +51,10 @@ latexocr:
 
 casengine:
   url: http://localhost:8184
+
+logging:
+  logback:
+    rollingpolicy:
+      max-file-size: 10MB
+      max-history: 7
+      total-size-cap: 100MB

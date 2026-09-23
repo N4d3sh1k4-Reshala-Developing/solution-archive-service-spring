@@ -1,3 +1,5 @@
+name: reshala-containers
+
 services:
   solution-archive-service:
     image: ghcr.io/${IMAGE_NAME}:latest
@@ -34,6 +36,11 @@ services:
       - LATEXOCR_URL=http://ocr-web-reshala:8183
       - CASENGINE_URL=http://cas-web-reshala:8184
 
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
     networks:
       - reshala-net
     restart: unless-stopped

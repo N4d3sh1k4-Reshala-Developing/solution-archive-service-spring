@@ -110,8 +110,6 @@ public class MinioService {
                     .build()
             );
         } catch (Exception e) {
-            // В реальном проекте лучше создать кастомное исключение,
-            // например, StorageException
             throw new RuntimeException("Ошибка при скачивании файла из MinIO: " + filename, e);
         }
     }
